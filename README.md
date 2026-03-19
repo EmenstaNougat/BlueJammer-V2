@@ -54,24 +54,25 @@ They communicate over a **UART link at 115200 baud** using a lightweight protoco
 - **Up to 4x NRF24L01+ modules** running simultaneously in a dynamic round-robin hop pattern
 - Modules are hot-pluggable - the probe task detects connect/disconnect every 500ms and redistributes hops automatically so 1, 2, 3, or 4 radios always run at full capacity
 - **4 jamming modes:**
-  - `Mode 1` - Bluetooth (2.4GHz, CH 0-78)
-  - `Mode 2` - BLE (2.4GHz, CH 0-38)
-  - `Mode 3` - WiFi (2.4GHz, CH 0-13)
-  - `Mode 4` - RC/Drone (2.4GHz, CH 0-124)
+  - `Mode 1` - Bluetooth (2.4GHz, CH 0-79)
+  - `Mode 2` - BLE (2.4GHz, CH 0-39)
+  - `Mode 3` - WiFi (2.4GHz, CH 0-14)
+  - `Mode 4` - RC/Drone (2.4GHz, CH 0-125)
 - Dual SPI buses (HSPI + VSPI) with NRF3 sharing HSPI via separate CE/CSN
 - Built to squeeze every bit of processing power out of the ESP32 - the jamming engine runs completely separately from the UI, UART, and display tasks with zero interference between them
 
 ### Web Interface (BW16)
 - Hosted on a **5GHz WiFi AP** (default channel 149, configurable)
 - Full real-time mode control with live status polling every 300ms
-- NRF module status (R1 / R2 / R3 / R4 - OK or FAIL)
-- Serial monitor built into the web UI
+- NRF module status (R1 / R2 / R3 / R4 - OK or FAIL), updated live as modules are plugged or unplugged
+- Serial monitor built into the web UI - shows real ESP32 serial output forwarded over UART
 - Command log
 - **AP Settings panel** - change SSID, password, channel, hidden mode
-- **Preferences panel** - OLED I2C address, UART baud rate, boot behaviour
-- **UART error overlay** - animated red notification slides in from the top if the ESP32 link drops mid-session
-- 5-minute AP auto-shutdown with a 10-second countdown if no browser connects (configurable)
-- Safety notice - if the AP is configured on a 2.4GHz channel, a warning banner is shown in the web UI. Jamming will still work but you will lose the web connection the moment a mode is activated since the control link operates in the same frequency space being jammed. Switch back to Idle using the physical button on the ESP32, then reconnect to regain web access. Using a 5GHz channel (default: 149) avoids this entirely.
+- **OLED panel** - adjust brightness (0-100% in steps of 10, live preview), screen timeout with fade-out, I2C address selector
+- **Preferences panel** - boot mode selector (idle or direct into a specific mode)
+- **UART error overlay** - animated red notification slides in from the top if the ESP32 link drops mid-session, clears automatically on reconnect
+- 5-minute AP auto-shutdown with a 10-second countdown if no browser connects
+- Safety notice - if the AP is configured on a 2.4GHz channel, a warning banner is shown. Jamming still works but you will lose the web connection the moment a mode is activated. Use the physical button on the ESP32 to stop and reconnect. Using a 5GHz channel (default: 149) avoids this entirely.
 
 ### OLED Display (128x64)
 - Boot splash screen
@@ -79,6 +80,9 @@ They communicate over a **UART link at 115200 baud** using a lightweight protoco
 - Mode screens with icon and label for each jamming mode
 - Settings screen when web settings panel is open
 - AP timeout countdown shown in the status bar (last 10 seconds)
+- Configurable brightness (0-100%, live from web UI) with smooth fade-out on dim
+- Configurable screen timeout with automatic power-off and fade effect
+- Screen wakes on physical button press only when timed out
 
 ### BW16 LED Feedback
 The onboard RGB LED on the BW16 communicates device state visually:
@@ -92,11 +96,11 @@ The onboard RGB LED on the BW16 communicates device state visually:
 | Cyan strobe | Browser just connected |
 | Green/Orange/Red blink | AP 10s countdown (colour changes by urgency) |
 | Rapid R+B flash | AP shutting down |
-| B-B-R-R rapid flash | No ESP32 detected on UART, Distinct warning pattern |
-| 3x green flash | ESP32 connected after initial link-down |
+| Distinct warning pattern | No ESP32 detected on UART |
+| 3x green flash | ESP32 link restored after disconnect |
 
-### UART Handshake Protocol
-Both boards announce their presence on boot with a `SYN` message. If no response is received within 10 seconds the BW16 activates the link-down LED pattern and keeps probing. Every mode command sent includes an acknowledgement system - if no `ACK` is received within 2 seconds the web UI shows a live error notification.
+### UART Communication
+Both boards use a live bidirectional heartbeat system. The ESP32 sends a `HB` pulse every 2 seconds, the BW16 replies, and the ESP32 confirms both directions are working with a `LINKOK` message. If either wire goes down, the BW16 detects it within 5 seconds and shows a UART error overlay on the web interface and activates the warning LED pattern. The link recovers automatically the moment the connection is restored.
 
 ---
 
@@ -266,8 +270,8 @@ Once connected to the AP:
 
 **OLED not turning on**
 - Check SDA/SCL wiring (GPIO4/5)
-- Verify I2C address - default is 0x3C, some displays use 0x3D (adjustable in web preferences)
-- `uiTask` stack was increased to 8192 bytes - if you modify the display code ensure it stays sufficient
+- Verify I2C address - default is 0x3C, some displays use 0x3D (adjustable in OLED settings panel)
+- If brightness was set to 0% the screen will be off - adjust in the web UI OLED panel
 
 **NRF modules showing FAIL**
 - Check wiring and the 10µF decoupling capacitor
@@ -278,7 +282,8 @@ Once connected to the AP:
 - Verify TX/RX are crossed correctly
 - ESP32 UART: GPIO26 (RX) ← BW16 PB1, GPIO33 (TX) → BW16 PB2
 - Both boards share GND - this is required
-- The BW16 will show a distinct warning LED pattern if no ESP32 is detected within 10 seconds of boot
+- The BW16 shows a distinct warning LED pattern and the web UI shows an error overlay if the UART link goes down
+- The link is checked live in both directions - if only one wire is connected it will still be detected as a fault
 
 **Web interface not loading**
 - Confirm you are connected to the BW16's AP (5GHz capable device required)
